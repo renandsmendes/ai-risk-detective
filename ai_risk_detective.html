@@ -1,0 +1,1688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Risk Detective</title>
+<!-- No external font requests — fully offline compatible -->
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a26;
+    --border: #2a2a3e;
+    --accent: #00e5ff;
+    --accent2: #ff3d6b;
+    --accent3: #ffe066;
+    --text: #e8e8f0;
+    --text-dim: #7a7a9a;
+    --green: #00ff9d;
+    --red: #ff3d6b;
+    --correct: #00ff9d22;
+    --wrong: #ff3d6b22;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Consolas', 'Courier New', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,229,255,0.015) 2px, rgba(0,229,255,0.015) 4px);
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* Grid background */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 20px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ─── HEADER ─── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 0 30px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 30px;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 44px;
+    height: 44px;
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    animation: pulse-border 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-border {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(0,229,255,0.4); }
+    50% { box-shadow: 0 0 0 8px rgba(0,229,255,0); }
+  }
+
+  .logo-text {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 800;
+    font-size: 1.1rem;
+    letter-spacing: 0.05em;
+  }
+
+  .logo-text span { color: var(--accent); }
+
+  .hud {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+  }
+
+  .hud-item {
+    text-align: center;
+  }
+
+  .hud-label {
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  .hud-value {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 1.3rem;
+    color: var(--accent);
+  }
+
+  .hud-value.score-val { color: var(--accent3); }
+  .hud-value.lives-val { color: var(--accent2); }
+
+  /* ─── SCREENS ─── */
+  .screen { display: none; flex-direction: column; flex: 1; }
+  .screen.active { display: flex; }
+
+  /* ─── INTRO SCREEN ─── */
+  .intro-hero {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 40px 0;
+    gap: 28px;
+  }
+
+  .intro-badge {
+    display: inline-block;
+    background: var(--surface2);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    padding: 6px 16px;
+    text-transform: uppercase;
+  }
+
+  .intro-title {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 800;
+    font-size: clamp(2.8rem, 8vw, 5rem);
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+
+  .intro-title .line1 { color: var(--text); }
+  .intro-title .line2 { color: var(--accent); }
+  .intro-title .line3 { color: var(--accent2); }
+
+  .intro-desc {
+    max-width: 520px;
+    color: var(--text-dim);
+    line-height: 1.8;
+    font-size: 0.85rem;
+  }
+
+  .intro-desc strong { color: var(--text); }
+
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+  }
+
+  .tag {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 0.65rem;
+    padding: 4px 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .tag.shadow { border-color: var(--accent2); color: var(--accent2); }
+  .tag.deepfake { border-color: var(--accent3); color: var(--accent3); }
+  .tag.responsible { border-color: var(--accent); color: var(--accent); }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    padding: 16px 48px;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: all 0.2s;
+    clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .btn-primary:hover {
+    background: var(--text);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(0,229,255,0.3);
+  }
+
+  /* ─── GAME SCREEN ─── */
+  .progress-bar-wrap {
+    background: var(--surface2);
+    height: 4px;
+    border-radius: 2px;
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    transition: width 0.5s ease;
+    border-radius: 2px;
+  }
+
+  .case-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    gap: 12px;
+  }
+
+  .case-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .case-type {
+    font-size: 0.6rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border: 1px solid;
+    display: inline-block;
+  }
+
+  .case-type.shadow { border-color: var(--accent2); color: var(--accent2); background: rgba(255,61,107,0.08); }
+  .case-type.deepfake { border-color: var(--accent3); color: var(--accent3); background: rgba(255,224,102,0.08); }
+  .case-type.responsible { border-color: var(--accent); color: var(--accent); background: rgba(0,229,255,0.08); }
+
+  .case-number {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    margin-top: 6px;
+  }
+
+  .timer-ring {
+    flex-shrink: 0;
+    width: 52px;
+    height: 52px;
+    position: relative;
+  }
+
+  .timer-ring svg {
+    transform: rotate(-90deg);
+    width: 52px;
+    height: 52px;
+  }
+
+  .timer-ring circle {
+    fill: none;
+    stroke-width: 3;
+    stroke-linecap: round;
+  }
+
+  .timer-ring .bg { stroke: var(--border); }
+  .timer-ring .fg {
+    stroke: var(--accent);
+    stroke-dasharray: 138;
+    stroke-dashoffset: 0;
+    transition: stroke-dashoffset 1s linear, stroke 0.3s;
+  }
+
+  .timer-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--accent);
+  }
+
+  .scenario-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 28px;
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .scenario-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+  }
+
+  .scenario-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.2em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .scenario-text {
+    font-size: 0.9rem;
+    line-height: 1.8;
+    color: var(--text);
+  }
+
+  .scenario-text .highlight {
+    background: rgba(0,229,255,0.12);
+    color: var(--accent);
+    padding: 1px 4px;
+  }
+
+  .scenario-text .warning {
+    background: rgba(255,61,107,0.12);
+    color: var(--accent2);
+    padding: 1px 4px;
+  }
+
+  .question-text {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 1.05rem;
+    margin-bottom: 20px;
+    line-height: 1.4;
+    color: var(--text);
+  }
+
+  .choices {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+
+  .choice-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: ui-monospace, 'SF Mono', 'Consolas', 'Courier New', monospace;
+    font-size: 0.82rem;
+    padding: 14px 18px;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    line-height: 1.5;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-appearance: none;
+    appearance: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .choice-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    background: rgba(0,229,255,0.05);
+    transform: translateX(4px);
+  }
+
+  .choice-btn .choice-letter {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--text-dim);
+    margin-top: 1px;
+  }
+
+  .choice-btn.correct {
+    border-color: var(--green);
+    background: var(--correct);
+    color: var(--green);
+  }
+
+  .choice-btn.correct .choice-letter {
+    border-color: var(--green);
+    color: var(--green);
+  }
+
+  .choice-btn.wrong {
+    border-color: var(--red);
+    background: var(--wrong);
+    color: var(--red);
+    opacity: 0.7;
+  }
+
+  .choice-btn.wrong .choice-letter {
+    border-color: var(--red);
+    color: var(--red);
+  }
+
+  .choice-btn:disabled { cursor: not-allowed; }
+
+  /* Feedback panel */
+  .feedback {
+    display: none;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    animation: slide-up 0.3s ease;
+  }
+
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .feedback.show { display: block; }
+
+  .feedback-verdict {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .feedback-verdict.correct-v { color: var(--green); }
+  .feedback-verdict.wrong-v { color: var(--red); }
+
+  .feedback-explanation {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+
+  .feedback-explanation strong { color: var(--text); }
+
+  .next-btn {
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 0.85rem;
+    padding: 12px 32px;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: all 0.2s;
+    display: none;
+  }
+
+  .next-btn.show { display: block; }
+  .next-btn:hover { background: var(--accent); color: var(--bg); }
+
+  /* ─── RESULTS SCREEN ─── */
+  .results-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 28px;
+    padding: 40px 0;
+  }
+
+  .results-badge {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5rem;
+    border: 3px solid var(--accent);
+    animation: spin-in 0.6s ease;
+  }
+
+  @keyframes spin-in {
+    from { transform: scale(0) rotate(-180deg); opacity: 0; }
+    to { transform: scale(1) rotate(0deg); opacity: 1; }
+  }
+
+  .results-title {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 800;
+    font-size: clamp(1.8rem, 5vw, 3rem);
+    line-height: 1.1;
+  }
+
+  .results-score-big {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 800;
+    font-size: clamp(3rem, 10vw, 6rem);
+    color: var(--accent3);
+    line-height: 1;
+  }
+
+  .results-score-label {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  .results-rank {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 16px 32px;
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 0.9rem;
+    letter-spacing: 0.05em;
+  }
+
+  .results-rank span { color: var(--accent); }
+
+  .results-breakdown {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    width: 100%;
+    max-width: 500px;
+  }
+
+  .breakdown-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 14px;
+    text-align: center;
+  }
+
+  .breakdown-val {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 1.6rem;
+    margin-bottom: 4px;
+  }
+
+  .breakdown-label {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .results-message {
+    max-width: 480px;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    line-height: 1.8;
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .btn-secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 0.85rem;
+    padding: 12px 28px;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: all 0.2s;
+  }
+
+  .btn-secondary:hover { border-color: var(--text); color: var(--text); }
+
+  /* Glitch effect on correct answer */
+  @keyframes glitch {
+    0% { text-shadow: 2px 0 var(--accent2), -2px 0 var(--accent); }
+    25% { text-shadow: -2px 0 var(--accent2), 2px 0 var(--accent); }
+    50% { text-shadow: 2px 2px var(--accent2), -2px -2px var(--accent); }
+    75% { text-shadow: 0 0 0; }
+    100% { text-shadow: 2px 0 var(--accent2), -2px 0 var(--accent); }
+  }
+
+  .glitch { animation: glitch 0.4s ease 1; }
+
+  /* Flash screen */
+  .flash {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .flash.green { background: rgba(0,255,157,0.15); }
+  .flash.red { background: rgba(255,61,107,0.15); }
+  .flash.show { opacity: 1; }
+
+  /* Life indicators */
+  .lives-display {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+  }
+
+  .life-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent2);
+    transition: all 0.3s;
+  }
+
+  .life-dot.lost {
+    background: var(--border);
+    transform: scale(0.7);
+  }
+
+  @media (max-width: 600px) {
+    .results-breakdown { grid-template-columns: repeat(3, 1fr); }
+    .hud { gap: 12px; }
+    .intro-title { font-size: 2.5rem; }
+  }
+
+  /* ─── NAME ENTRY ─── */
+  .name-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    text-align: center;
+    padding: 40px 0;
+  }
+
+  .name-title {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 800;
+    font-size: clamp(1.6rem, 5vw, 2.4rem);
+    color: var(--text);
+    line-height: 1.2;
+  }
+
+  .name-title span { color: var(--accent); }
+
+  .name-input {
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    color: var(--text);
+    font-family: ui-monospace, 'Consolas', monospace;
+    font-size: 1.1rem;
+    padding: 14px 24px;
+    text-align: center;
+    width: 100%;
+    max-width: 360px;
+    outline: none;
+    letter-spacing: 0.05em;
+    -webkit-appearance: none;
+    appearance: none;
+    border-radius: 0;
+  }
+
+  .name-input:focus { box-shadow: 0 0 0 2px rgba(0,229,255,0.3); }
+  .name-input::placeholder { color: var(--text-dim); }
+
+  .music-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .music-toggle .toggle-dot {
+    width: 36px;
+    height: 20px;
+    background: var(--border);
+    border-radius: 10px;
+    position: relative;
+    transition: background 0.2s;
+  }
+
+  .music-toggle .toggle-dot::after {
+    content: '';
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    transition: all 0.2s;
+  }
+
+  .music-toggle.on .toggle-dot { background: var(--accent); }
+  .music-toggle.on .toggle-dot::after { left: 19px; background: var(--bg); }
+  .music-toggle.on { color: var(--accent); }
+
+  /* ─── LEADERBOARD ─── */
+  .leaderboard-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 20px 0 40px;
+  }
+
+  .lb-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .lb-title {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 800;
+    font-size: 1.4rem;
+    color: var(--text);
+  }
+
+  .lb-title span { color: var(--accent3); }
+
+  .lb-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .lb-table th {
+    font-size: 0.6rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .lb-table th:last-child, .lb-table td:last-child { text-align: right; }
+
+  .lb-table td {
+    padding: 10px 12px;
+    font-size: 0.88rem;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .lb-table tr:nth-child(odd) td { background: var(--surface); }
+  .lb-table tr:nth-child(even) td { background: var(--surface2); }
+
+  .lb-table tr.me td { background: rgba(0,229,255,0.07); color: var(--accent); }
+  .lb-table tr.me td:first-child::before { content: '→ '; }
+
+  .lb-rank-num {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    width: 32px;
+    display: inline-block;
+    text-align: center;
+  }
+
+  .lb-rank-num.gold { color: var(--accent3); }
+  .lb-rank-num.silver { color: #C0C0C0; }
+  .lb-rank-num.bronze { color: #CD7F32; }
+
+  .lb-score-val {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 700;
+    color: var(--accent3);
+  }
+
+  .lb-loading {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+  }
+
+  .lb-empty {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+  }
+
+  .your-result-card {
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .your-result-card .yrc-name {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--accent);
+  }
+
+  .your-result-card .yrc-score {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 800;
+    font-size: 1.4rem;
+    color: var(--accent3);
+  }
+
+  .your-result-card .yrc-rank-label {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  /* ─── FLOATING MUSIC BTN ─── */
+  .music-float {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1000;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    padding: 8px 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    user-select: none;
+  }
+  .music-float:hover { border-color: var(--accent); color: var(--accent); }
+  .music-float.playing { border-color: var(--accent); color: var(--accent); }
+  .music-float .mf-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--border);
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  .music-float.playing .mf-dot { background: var(--accent); animation: blink 1s ease-in-out infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* ─── SPEED BONUS POPUP ─── */
+  .speed-popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -60px);
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 800;
+    font-size: 1.6rem;
+    color: var(--accent3);
+    pointer-events: none;
+    z-index: 2000;
+    opacity: 0;
+    transition: none;
+    text-shadow: 0 0 20px rgba(255,224,102,0.6);
+    white-space: nowrap;
+  }
+  .speed-popup.show {
+    animation: popup-fly 1.2s ease forwards;
+  }
+  @keyframes popup-fly {
+    0%   { opacity: 0; transform: translate(-50%, -60px) scale(0.7); }
+    20%  { opacity: 1; transform: translate(-50%, -80px) scale(1.1); }
+    60%  { opacity: 1; transform: translate(-50%, -110px) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -140px) scale(0.9); }
+  }
+
+</style>
+</head>
+<body>
+
+<div class="flash" id="flash"></div>
+<button class="music-float playing" id="music-float-btn" onclick="toggleMusic()" aria-label="Toggle music">
+  <div class="mf-dot"></div>
+  <span id="music-float-label">♪ MUSIC ON</span>
+</button>
+<div class="speed-popup" id="speed-popup"></div>
+
+<div class="container">
+  <header class="header">
+    <div class="logo">
+      <div class="logo-icon">🔍</div>
+      <div class="logo-text">AI <span>RISK</span> DETECTIVE</div>
+    </div>
+    <div class="hud" id="hud" style="display:none">
+      <div class="hud-item">
+        <div class="hud-label">Score</div>
+        <div class="hud-value score-val" id="score-display">0</div>
+      </div>
+      <div class="hud-item">
+        <div class="hud-label">Lives</div>
+        <div class="lives-display" id="lives-display"></div>
+      </div>
+      <div class="hud-item">
+        <div class="hud-label">Case</div>
+        <div class="hud-value" id="case-display">1/10</div>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- NAME ENTRY -->
+  <div class="screen" id="screen-name">
+    <div class="name-wrap">
+      <div class="intro-badge">Identify Yourself, Detective</div>
+      <div class="name-title">What is your <span>name?</span></div>
+      <p style="font-size:0.82rem;color:var(--text-dim);max-width:400px;line-height:1.7;">
+        Your score will be saved to the global leaderboard. Enter your name to begin.
+      </p>
+      <input class="name-input" id="player-name-input" type="text"
+        maxlength="20" placeholder="Enter your name..."
+        onkeydown="if(event.key==='Enter') confirmName()" autocomplete="off" />
+      <div class="music-toggle on" id="music-toggle-btn" onclick="toggleMusicPref()">
+        <div class="toggle-dot"></div>
+        <span id="music-label-text">Detective Music ON</span>
+      </div>
+      <button class="btn-primary" onclick="confirmName()">START INVESTIGATION →</button>
+    </div>
+  </div>
+
+  <!-- INTRO -->
+  <div class="screen active" id="screen-intro">
+    <div class="intro-hero">
+      <div class="intro-badge">Training Simulation Active</div>
+      <div class="intro-title">
+        <div class="line1">SPOT THE</div>
+        <div class="line2">AI RISK</div>
+        <div class="line3">DETECTIVE</div>
+      </div>
+      <p class="intro-desc">
+        You are an <strong>AI Risk Analyst</strong> at an international organization. Real-world scenarios will cross your desk. Your mission: identify the risk, choose the right action, and protect the organization before the threat spreads.
+      </p>
+      <div class="tags">
+        <span class="tag shadow">Shadow AI</span>
+        <span class="tag deepfake">Deepfakes</span>
+        <span class="tag responsible">Responsible AI Use</span>
+      </div>
+      <div>
+        <div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:6px;letter-spacing:0.1em;">10 CASES &nbsp;|&nbsp; 60 SEC PER CASE &nbsp;|&nbsp; 3 LIVES</div>
+        <button class="btn-primary" onclick="goToNameEntry()">BEGIN INVESTIGATION</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GAME -->
+  <div class="screen" id="screen-game">
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+    </div>
+
+    <div class="case-header">
+      <div class="case-meta">
+        <span class="case-type" id="case-type-badge">Shadow AI</span>
+        <div class="case-number" id="case-number">CASE FILE 01 OF 10</div>
+      </div>
+      <div class="timer-ring">
+        <svg viewBox="0 0 44 44">
+          <circle class="bg" cx="22" cy="22" r="18"/>
+          <circle class="fg" id="timer-circle" cx="22" cy="22" r="18"/>
+        </svg>
+        <div class="timer-text" id="timer-text">30</div>
+      </div>
+    </div>
+
+    <div class="scenario-card">
+      <div class="scenario-label">// Incoming Case File</div>
+      <div class="scenario-text" id="scenario-text"></div>
+    </div>
+
+    <div class="question-text" id="question-text"></div>
+
+    <div class="choices" id="choices"></div>
+
+    <div class="feedback" id="feedback">
+      <div class="feedback-verdict" id="feedback-verdict"></div>
+      <div class="feedback-explanation" id="feedback-explanation"></div>
+    </div>
+
+    <button class="next-btn" id="next-btn" onclick="nextCase()">NEXT CASE →</button>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="screen" id="screen-results">
+    <div class="results-wrap">
+      <div class="results-badge" id="results-badge">🏅</div>
+      <div class="results-title" id="results-title">Investigation Complete</div>
+      <div>
+        <div class="results-score-big" id="results-score">0</div>
+        <div class="results-score-label">points earned</div>
+      </div>
+      <div class="results-rank" id="results-rank">Rank: <span>Field Analyst</span></div>
+      <div class="results-breakdown">
+        <div class="breakdown-item">
+          <div class="breakdown-val" id="res-correct" style="color:var(--green)">0</div>
+          <div class="breakdown-label">Correct</div>
+        </div>
+        <div class="breakdown-item">
+          <div class="breakdown-val" id="res-wrong" style="color:var(--red)">0</div>
+          <div class="breakdown-label">Missed</div>
+        </div>
+        <div class="breakdown-item">
+          <div class="breakdown-val" id="res-time" style="color:var(--accent)">0s</div>
+          <div class="breakdown-label">Avg Time</div>
+        </div>
+      </div>
+      <div class="results-message" id="results-message"></div>
+      <div class="btn-row">
+        <button class="btn-primary" onclick="showLeaderboard()">VIEW LEADERBOARD 🏆</button>
+        <button class="btn-secondary" onclick="startGame()">PLAY AGAIN</button>
+        <button class="btn-secondary" onclick="showIntro()">MAIN MENU</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LEADERBOARD -->
+  <div class="screen" id="screen-leaderboard">
+    <div class="leaderboard-wrap">
+      <div class="lb-header">
+        <div class="lb-title">Global <span>Leaderboard</span> 🏆</div>
+        <button class="btn-secondary" onclick="showIntro()" style="font-size:0.7rem;padding:8px 16px;">MENU</button>
+      </div>
+      <div class="your-result-card" id="your-result-card" style="display:none">
+        <div>
+          <div class="yrc-rank-label">Your Result</div>
+          <div class="yrc-name" id="yrc-name"></div>
+        </div>
+        <div style="text-align:right">
+          <div class="yrc-score" id="yrc-score"></div>
+          <div class="yrc-rank-label" id="yrc-rank-label"></div>
+        </div>
+      </div>
+      <div id="lb-content">
+        <div class="lb-loading">Loading scores...</div>
+      </div>
+      <div class="btn-row" style="justify-content:center;margin-top:8px;">
+        <button class="btn-primary" onclick="startGame()">PLAY AGAIN</button>
+        <button class="btn-secondary" onclick="refreshLeaderboard()" style="font-size:0.75rem;padding:10px 20px;">↻ REFRESH</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center; padding: 24px 0 16px; border-top: 1px solid #2a2a3e; margin-top: 12px;">
+    <span style="font-size:0.65rem; letter-spacing:0.18em; color:#7a7a9a; font-family: ui-monospace, monospace; text-transform: uppercase;">Created by &nbsp;<span style="color:#00e5ff;">Renan Mendes</span></span>
+  </div>
+</div>
+
+<script>
+const CASES = [
+  {
+    type: 'shadow',
+    typeLabel: 'Shadow AI',
+    scenario: `A Finance colleague tells you: <span class="warning">"I paste our budget reports into a free AI website to get quick summaries."</span> The data includes salaries and lending commitments. The tool is not on the approved software list.`,
+    question: 'What is the main risk and what do you do?',
+    choices: [
+      { text: 'Recommend a paid version of the same tool for better performance.', correct: false },
+      { text: 'Sensitive data is being sent to an unknown external platform. Report to IT and ask the colleague to stop immediately.', correct: true },
+      { text: 'It is fine as long as they delete the data afterward.', correct: false },
+      { text: 'Suggest using incognito mode to keep it private.', correct: false }
+    ],
+    explanation: '<strong>Shadow AI</strong> means using unapproved tools outside the org\'s stack. External platforms may store or train on your data. Deleting locally or going incognito does nothing server-side. Escalate to IT immediately.'
+  },
+  {
+    type: 'deepfake',
+    typeLabel: 'Deepfake',
+    scenario: `A video appears in the staff Teams channel showing <span class="warning">the Managing Director announcing all vendor contracts are suspended.</span> The face looks slightly pixelated and the audio rhythm is off. Colleagues are already panicking and calling vendors.`,
+    question: 'What do you do first?',
+    choices: [
+      { text: 'Forward to your manager and wait.', correct: false },
+      { text: 'Post in the channel urging people not to act, report to IT Security, and verify through official channels before anyone contacts vendors.', correct: true },
+      { text: 'Check the official YouTube channel and ignore it if the video is not there.', correct: false },
+      { text: 'Call vendors yourself to reassure them, then report next week.', correct: false }
+    ],
+    explanation: '<strong>Deepfake clues:</strong> pixelated edges, unnatural lip sync, irregular audio. Never take operational action on unverified announcements. Flag it publicly so panic stops spreading, and report to IT Security immediately.'
+  },
+  {
+    type: 'responsible',
+    typeLabel: 'Responsible AI',
+    scenario: `Your manager says: <span class="highlight">"Use Copilot to write all 15 performance evaluations and send them straight to HR. No need to review them."</span>`,
+    question: 'What is the problem with this approach?',
+    choices: [
+      { text: 'No problem. This is exactly what AI is built for.', correct: false },
+      { text: 'Performance decisions affect people\'s careers and require human review. Use AI to draft, but a human must review each evaluation before it goes to HR.', correct: true },
+      { text: 'Only use AI for junior staff evaluations.', correct: false },
+      { text: 'Ask HR if they mind AI-generated evaluations and proceed if they agree.', correct: false }
+    ],
+    explanation: '<strong>Human oversight</strong> is required when AI is used in high-stakes decisions. Evaluations carry legal and ethical weight. AI drafts, humans decide. Skipping review creates liability and undermines trust.'
+  },
+  {
+    type: 'shadow',
+    typeLabel: 'Shadow AI',
+    scenario: `A developer admits: <span class="warning">"I\'ve been using GitHub Copilot on my personal laptop for three months to build our internal reporting tool. I bought the license myself so it cost the org nothing."</span>`,
+    question: 'What are the risks here?',
+    choices: [
+      { text: 'None. The developer paid personally and it saved time.', correct: false },
+      { text: 'Only a license compliance issue. Request reimbursement.', correct: false },
+      { text: 'The code may have IP issues, security gaps, or data leakage. Disclose to IT, get the code reviewed, and submit a formal tool approval request.', correct: true },
+      { text: 'Delete all the code and start over.', correct: false }
+    ],
+    explanation: '<strong>AI code tools</strong> may reproduce copyrighted code, expose IP to external servers, and produce unreviewed security vulnerabilities. The fix is not deletion but disclosure, security review, and formal approval.'
+  },
+  {
+    type: 'deepfake',
+    typeLabel: 'Deepfake',
+    scenario: `A journalist sends your comms team an <span class="warning">audio clip of the Deputy Director</span> making controversial policy statements and asks for a comment in two hours. The Deputy Director is traveling and unreachable. The audio sounds real.`,
+    question: 'How do you respond?',
+    choices: [
+      { text: 'Issue a denial immediately to get ahead of the story.', correct: false },
+      { text: 'Do not comment until the audio is verified. Escalate to legal and comms leadership and have IT Security analyze the file before any statement is made.', correct: true },
+      { text: 'The audio sounds authentic so confirm it and prepare an apology.', correct: false },
+      { text: 'Ask the journalist to hold the story for a week.', correct: false }
+    ],
+    explanation: '<strong>Audio deepfakes</strong> are highly convincing. Never respond to media on unverified materials. Two hours is enough time to verify, escalate, and engage IT Security. Issuing a premature statement can itself become part of the crisis.'
+  },
+  {
+    type: 'responsible',
+    typeLabel: 'Responsible AI',
+    scenario: `A colleague used the approved internal AI to translate a confidential country briefing note, but mentions: <span class="warning">"I pasted it into a free public translation site first just to get a rough draft."</span>`,
+    question: 'Where is the real risk?',
+    choices: [
+      { text: 'Both tools are equally risky since all AI stores data.', correct: false },
+      { text: 'The internal tool is fine. The public site likely retained confidential country data on external servers, potentially breaching the org\'s confidentiality obligations.', correct: true },
+      { text: 'Neither is a risk. Translation tools do not store content.', correct: false },
+      { text: 'Only a risk if the country finds out.', correct: false }
+    ],
+    explanation: '<strong>Free public AI tools</strong> almost always retain and may train on input data. Sending non-public member country financials to an unapproved platform can breach the organization\'s charter. "Just a rough draft" is not a safe exception.'
+  },
+  {
+    type: 'shadow',
+    typeLabel: 'Shadow AI',
+    scenario: `A senior analyst built a <span class="warning">custom chatbot using her personal API key</span> connected to an external AI model. She shared it with 30 colleagues to summarize reports and draft memos. IT knows nothing about it.`,
+    question: 'Why is this particularly dangerous?',
+    choices: [
+      { text: 'The main risk is that the bot might give wrong answers.', correct: false },
+      { text: 'Every document submitted is routed through a personal external API with no security controls, no audit trail, and no data governance. Escalate to IT Security and suspend the tool immediately.', correct: true },
+      { text: 'It is only risky if someone shares it outside the division.', correct: false },
+      { text: 'She built it so the org owns it and internal policies apply.', correct: false }
+    ],
+    explanation: '<strong>Custom shadow AI tools</strong> on personal API keys bypass all organizational controls. 30 people have unknowingly sent internal content to an external server. Good intentions do not reduce the risk. Escalate immediately.'
+  },
+  {
+    type: 'deepfake',
+    typeLabel: 'Deepfake',
+    scenario: `During a live virtual conference, a participant flags that <span class="warning">a video on social media shows your organization\'s president making an announcement</span> that contradicts the official agenda. It has thousands of retweets. Attendees are reacting in the chat.`,
+    question: 'What is the priority action?',
+    choices: [
+      { text: 'Pause the conference, officially state the video is being investigated and should not be acted upon, and engage comms and IT Security immediately.', correct: true },
+      { text: 'Continue the conference and address it afterward.', correct: false },
+      { text: 'Have the president appear on camera right now to deny it.', correct: false },
+      { text: 'Report to the social media platform and wait for removal.', correct: false }
+    ],
+    explanation: '<strong>Live deepfake response:</strong> every minute of silence lets the fake shape perception. Issue an immediate official statement, brief leadership, and stop attendees from acting on false information. Platform reporting is too slow to be the first move.'
+  },
+  {
+    type: 'responsible',
+    typeLabel: 'Responsible AI',
+    scenario: `An AI hiring tool ranked the top five candidates for an IT role. Your manager says: <span class="highlight">"Just go with the AI's top five."</span> You notice all five share similar demographics, while several strong diverse candidates were filtered out.`,
+    question: 'What should you do?',
+    choices: [
+      { text: 'Trust the AI. It is objective and cannot be biased.', correct: false },
+      { text: 'Pause the process, manually review the filtered candidates, flag the pattern to HR and your manager, and request a bias audit before proceeding.', correct: true },
+      { text: 'The AI is probably right. Diverse candidates can reapply next cycle.', correct: false },
+      { text: 'Add one diverse candidate manually and proceed.', correct: false }
+    ],
+    explanation: '<strong>AI bias in hiring</strong> is well-documented and legally consequential. Models trained on historical data reflect historical biases. Pause, investigate, and do not let efficiency override fairness. "The AI is objective" has cost many organizations dearly.'
+  },
+  {
+    type: 'responsible',
+    typeLabel: 'Responsible AI',
+    scenario: `A junior colleague was asked to use AI to <span class="highlight">write a geopolitical research report for senior leadership</span> and present it as their own analysis. They ask you: <span class="highlight">"What if the AI just made something up?"</span>`,
+    question: 'What is the core risk and the right approach?',
+    choices: [
+      { text: 'AI is reliable for research. Tell them to trust the output.', correct: false },
+      { text: 'AI can hallucinate, producing confident but false information. Every factual claim must be verified against primary sources before presenting to leadership.', correct: true },
+      { text: 'Add a disclaimer that it is AI-assisted and it is fine.', correct: false },
+      { text: 'The manager requested it so the responsibility is theirs.', correct: false }
+    ],
+    explanation: '<strong>AI hallucination</strong> means models can produce confident, plausible, and entirely false content. For a leadership report on a sensitive topic, every fact must be independently verified. A disclaimer does not prevent bad decisions made on false information.'
+  }
+];
+
+let currentCase = 0;
+let score = 0;
+let lives = 3;
+let answered = false;
+let timer = null;
+let timeLeft = 60;
+let totalTime = 0;
+let correctCount = 0;
+let wrongCount = 0;
+let shuffledCases = [];
+let playerName = '';
+let musicOn = true;
+let audioCtx = null;
+let musicNodes = [];
+let musicLoopTimeout = null;
+
+// MUSIC ENGINE
+function initAudio() {
+  if (audioCtx) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) audioCtx = new AC();
+  } catch(e) { audioCtx = null; musicOn = false; }
+}
+
+function playDetectiveMusic() {
+  if (!musicOn || !audioCtx) return;
+  stopMusicNodes();
+  const ctx = audioCtx;
+  const master = ctx.createGain();
+  master.gain.value = 0.15;
+  master.connect(ctx.destination);
+
+  const bassFreqs = [55, 55, 58, 55, 53, 55, 58, 60];
+  const bassLen = 0.36;
+  bassFreqs.forEach((freq, i) => {
+    try {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.value = freq;
+      const t = ctx.currentTime + i * bassLen;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.5, t + 0.04);
+      g.gain.linearRampToValueAtTime(0.2, t + bassLen - 0.04);
+      g.gain.linearRampToValueAtTime(0, t + bassLen);
+      osc.connect(g); g.connect(master);
+      osc.start(t); osc.stop(t + bassLen);
+      musicNodes.push(osc);
+    } catch(e) {}
+  });
+
+  const hatTimes = [0,0.18,0.36,0.54,0.72,0.9,1.08,1.26,1.44,1.62,1.80,1.98,2.16,2.34,2.52,2.70];
+  hatTimes.forEach(ht => {
+    try {
+      const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.035), ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1)*(1-i/d.length);
+      const src = ctx.createBufferSource();
+      const g = ctx.createGain();
+      const f = ctx.createBiquadFilter();
+      f.type = 'highpass'; f.frequency.value = 7000;
+      src.buffer = buf; g.gain.value = 0.25;
+      src.connect(f); f.connect(g); g.connect(master);
+      src.start(ctx.currentTime + ht);
+      musicNodes.push(src);
+    } catch(e) {}
+  });
+
+  const melodies = [{f:220,t:0.72,d:0.28},{f:246,t:1.08,d:0.22},{f:233,t:1.44,d:0.32},{f:220,t:1.80,d:0.38},{f:196,t:2.34,d:0.45}];
+  melodies.forEach(n => {
+    try {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'triangle'; osc.frequency.value = n.f;
+      g.gain.setValueAtTime(0, ctx.currentTime+n.t);
+      g.gain.linearRampToValueAtTime(0.35, ctx.currentTime+n.t+0.04);
+      g.gain.linearRampToValueAtTime(0, ctx.currentTime+n.t+n.d);
+      osc.connect(g); g.connect(master);
+      osc.start(ctx.currentTime+n.t); osc.stop(ctx.currentTime+n.t+n.d+0.1);
+      musicNodes.push(osc);
+    } catch(e) {}
+  });
+
+  if (musicLoopTimeout) clearTimeout(musicLoopTimeout);
+  musicLoopTimeout = setTimeout(() => { if (musicOn) playDetectiveMusic(); }, 2880);
+}
+
+function stopMusicNodes() {
+  musicNodes.forEach(n => { try { n.stop(); } catch(e) {} });
+  musicNodes = [];
+  if (musicLoopTimeout) { clearTimeout(musicLoopTimeout); musicLoopTimeout = null; }
+}
+
+function stopMusic() { stopMusicNodes(); }
+
+function toggleMusic() {
+  musicOn = !musicOn;
+  updateMusicFloatBtn();
+  if (musicOn) {
+    try {
+      initAudio();
+      if (audioCtx) {
+        if (audioCtx.state === 'suspended') audioCtx.resume().then(()=>{ if(musicOn) playDetectiveMusic(); }).catch(()=>{});
+        else playDetectiveMusic();
+      }
+    } catch(e) { musicOn = false; updateMusicFloatBtn(); }
+  } else {
+    stopMusic();
+  }
+}
+
+function updateMusicFloatBtn() {
+  const btn = document.getElementById('music-float-btn');
+  const lbl = document.getElementById('music-float-label');
+  if (!btn || !lbl) return;
+  if (musicOn) {
+    btn.classList.add('playing');
+    lbl.textContent = '♪ MUSIC ON';
+  } else {
+    btn.classList.remove('playing');
+    lbl.textContent = '♪ MUSIC OFF';
+  }
+}
+
+function toggleMusicPref() {
+  musicOn = !musicOn;
+  const btn = document.getElementById('music-toggle-btn');
+  const lbl = document.getElementById('music-label-text');
+  if (musicOn) { btn.classList.add('on'); lbl.textContent = 'Detective Music ON'; }
+  else { btn.classList.remove('on'); lbl.textContent = 'Detective Music OFF'; }
+  updateMusicFloatBtn();
+}
+
+// LEADERBOARD
+async function saveScoreDirect(name, sc, correct, total) {
+  if (!name) return null;
+  try {
+    const entry = { name: name.trim(), score: sc, correct, total, date: new Date().toLocaleDateString() };
+    let board = [];
+    if (typeof window.storage !== 'undefined') {
+      try {
+        const stored = await window.storage.get('ai_risk_detective_lb', true);
+        if (stored && stored.value) board = JSON.parse(stored.value);
+      } catch(e) { board = []; }
+      board.push(entry);
+      board.sort((a,b) => b.score - a.score);
+      const seen = new Set();
+      board = board.filter(e => { if (seen.has(e.name)) return false; seen.add(e.name); return true; });
+      board = board.slice(0, 20);
+      try { await window.storage.set('ai_risk_detective_lb', JSON.stringify(board), true); } catch(e) {}
+      return board;
+    } else {
+      // Fallback: sessionStorage for local testing
+      try {
+        const raw = sessionStorage.getItem('ai_risk_lb');
+        if (raw) board = JSON.parse(raw);
+      } catch(e) { board = []; }
+      board.push(entry);
+      board.sort((a,b) => b.score - a.score);
+      const seen = new Set();
+      board = board.filter(e => { if (seen.has(e.name)) return false; seen.add(e.name); return true; });
+      board = board.slice(0, 20);
+      try { sessionStorage.setItem('ai_risk_lb', JSON.stringify(board)); } catch(e) {}
+      return board;
+    }
+  } catch(e) { return null; }
+}
+
+async function loadLeaderboard() {
+  try {
+    if (typeof window.storage !== 'undefined') {
+      const stored = await window.storage.get('ai_risk_detective_lb', true);
+      if (stored && stored.value) return JSON.parse(stored.value);
+      return [];
+    } else {
+      const raw = sessionStorage.getItem('ai_risk_lb');
+      return raw ? JSON.parse(raw) : [];
+    }
+  } catch(e) { return []; }
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderLeaderboard(board, highlightName) {
+  const el = document.getElementById('lb-content');
+  if (!board || board.length === 0) {
+    el.innerHTML = '<div class="lb-empty">No scores yet. Be the first detective on the board!</div>';
+    return;
+  }
+  const medals = ['🥇','🥈','🥉'];
+  let html = '<table class="lb-table"><thead><tr><th>#</th><th>Detective</th><th>Score</th><th>Correct</th><th>Date</th></tr></thead><tbody>';
+  board.forEach((e, i) => {
+    const isMe = highlightName && e.name === highlightName;
+    const rankD = i < 3 ? medals[i] : '<span class="lb-rank-num">'+(i+1)+'</span>';
+    html += '<tr class="'+(isMe?'me':'')+'"><td>'+rankD+'</td><td>'+escHtml(e.name)+'</td><td><span class="lb-score-val">'+e.score+'</span></td><td>'+e.correct+'/'+(e.total||10)+'</td><td style="color:var(--text-dim);font-size:0.78rem">'+(e.date||'')+'</td></tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+
+  const myIdx = highlightName ? board.findIndex(e => e.name === highlightName) : -1;
+  if (myIdx >= 0) {
+    const card = document.getElementById('your-result-card');
+    if (card) {
+      card.style.display = 'flex';
+      document.getElementById('yrc-name').textContent = board[myIdx].name;
+      document.getElementById('yrc-score').textContent = board[myIdx].score + ' pts';
+      document.getElementById('yrc-rank-label').textContent =
+        myIdx===0 ? '🥇 Top of the leaderboard!' : myIdx===1 ? '🥈 2nd place' : myIdx===2 ? '🥉 3rd place' : '#'+(myIdx+1)+' globally';
+    }
+  }
+}
+
+async function showLeaderboard() {
+  showScreen('leaderboard');
+  document.getElementById('lb-content').innerHTML = '<div class="lb-loading">Loading global scores...</div>';
+  const board = await loadLeaderboard();
+  renderLeaderboard(board, playerName);
+}
+
+async function refreshLeaderboard() {
+  document.getElementById('lb-content').innerHTML = '<div class="lb-loading">Refreshing...</div>';
+  const board = await loadLeaderboard();
+  renderLeaderboard(board, playerName);
+}
+
+// GAME
+function shuffle(arr) { return [...arr].sort(() => Math.random() - 0.5); }
+
+function showIntro() {
+  stopMusic();
+  showScreen('intro');
+  document.getElementById('hud').style.display = 'none';
+}
+
+function goToNameEntry() {
+  showScreen('name');
+  document.getElementById('hud').style.display = 'none';
+  setTimeout(() => { const inp = document.getElementById('player-name-input'); if(inp) inp.focus(); }, 300);
+}
+
+function confirmName() {
+  try {
+    const inp = document.getElementById('player-name-input');
+    const val = inp ? inp.value.trim() : 'Detective';
+    if (!val) {
+      if (inp) { inp.style.borderColor='var(--accent2)'; setTimeout(()=>{ try{inp.style.borderColor='var(--accent)';}catch(e){} },800); }
+      return;
+    }
+    playerName = val;
+    startGame();
+  } catch(e) { playerName = 'Detective'; startGame(); }
+}
+
+function startGame() {
+  currentCase = 0; score = 0; lives = 3;
+  correctCount = 0; wrongCount = 0; totalTime = 0;
+  shuffledCases = shuffle(CASES);
+  updateHUD();
+  document.getElementById('hud').style.display = 'flex';
+  updateMusicFloatBtn();
+  showScreen('game');
+  if (musicOn) { try { initAudio(); if(audioCtx) { if(audioCtx.state==='suspended') audioCtx.resume().then(()=>{ if(musicOn) playDetectiveMusic(); }).catch(()=>{}); else playDetectiveMusic(); } } catch(e) { musicOn=false; } }
+  loadCase();
+}
+
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-'+name).classList.add('active');
+}
+
+function updateHUD() {
+  document.getElementById('score-display').textContent = score;
+  document.getElementById('case-display').textContent = (currentCase+1)+'/'+CASES.length;
+  const livesEl = document.getElementById('lives-display');
+  livesEl.innerHTML = '';
+  for (let i=0;i<3;i++) {
+    const dot = document.createElement('div');
+    dot.className = 'life-dot'+(i>=lives?' lost':'');
+    livesEl.appendChild(dot);
+  }
+}
+
+function loadCase() {
+  answered = false; timeLeft = 60;
+  const c = shuffledCases[currentCase];
+  const badge = document.getElementById('case-type-badge');
+  badge.textContent = c.typeLabel; badge.className = 'case-type '+c.type;
+  document.getElementById('case-number').textContent = 'CASE FILE '+String(currentCase+1).padStart(2,'0')+' OF '+CASES.length;
+  document.getElementById('scenario-text').innerHTML = c.scenario;
+  document.getElementById('question-text').textContent = c.question;
+  document.getElementById('progress-bar').style.width = ((currentCase/CASES.length)*100)+'%';
+  const choicesEl = document.getElementById('choices');
+  choicesEl.innerHTML = '';
+  const letters = ['A','B','C','D'];
+  shuffle(c.choices.map(ch=>({...ch}))).forEach((choice,i) => {
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.innerHTML = '<span class="choice-letter">'+letters[i]+'</span><span>'+choice.text+'</span>';
+    btn.onclick = () => selectAnswer(choice.correct, btn, choicesEl);
+    choicesEl.appendChild(btn);
+  });
+  document.getElementById('feedback').classList.remove('show');
+  document.getElementById('next-btn').classList.remove('show');
+  startTimer(c);
+  updateHUD();
+}
+
+function startTimer(caseData) {
+  if (timer) clearInterval(timer);
+  const circ = 2*Math.PI*18;
+  const circle = document.getElementById('timer-circle');
+  const timerText = document.getElementById('timer-text');
+  circle.style.stroke = 'var(--accent)';
+  circle.style.strokeDashoffset = '0';
+  timer = setInterval(() => {
+    timeLeft--;
+    totalTime++;
+    circle.style.strokeDashoffset = circ*(1-timeLeft/60);
+    timerText.textContent = timeLeft;
+    if (timeLeft<=15) circle.style.stroke='var(--accent2)';
+    if (timeLeft<=0) { clearInterval(timer); if(!answered) timeExpired(caseData); }
+  }, 1000);
+}
+
+function timeExpired(caseData) {
+  answered=true; wrongCount++; lives--;
+  flashScreen('red');
+  document.querySelectorAll('.choice-btn').forEach(btn => {
+    btn.disabled=true;
+    const txt = btn.querySelector('span:last-child').textContent;
+    if (txt===caseData.choices.find(c=>c.correct).text) btn.classList.add('correct');
+  });
+  showFeedback(false, caseData.explanation, true);
+  updateHUD();
+  if (lives<=0) setTimeout(()=>showResults(),2200);
+  else document.getElementById('next-btn').classList.add('show');
+}
+
+function selectAnswer(isCorrect, btn, choicesEl) {
+  if (answered) return;
+  answered=true; clearInterval(timer);
+  totalTime += (60-timeLeft);
+  const caseData = shuffledCases[currentCase];
+  choicesEl.querySelectorAll('.choice-btn').forEach(b => {
+    b.disabled=true;
+    if (b.querySelector('span:last-child').textContent===caseData.choices.find(c=>c.correct).text) b.classList.add('correct');
+  });
+  if (isCorrect) {
+    const pts = 100+Math.floor(timeLeft/6);
+    const bonus = Math.floor(timeLeft/6);
+    score+=pts; correctCount++;
+    flashScreen('green');
+    showFeedback(true, caseData.explanation, false, pts);
+    if (bonus > 0) showSpeedPopup(bonus, timeLeft);
+  } else {
+    btn.classList.add('wrong'); lives--; wrongCount++;
+    flashScreen('red');
+    showFeedback(false, caseData.explanation, false);
+  }
+  updateHUD();
+  if (lives<=0) { setTimeout(()=>showResults(),2200); return; }
+  document.getElementById('next-btn').classList.add('show');
+}
+
+
+function showSpeedPopup(bonus, timeLeft) {
+  const el = document.getElementById('speed-popup');
+  if (!el) return;
+  const label = timeLeft >= 50 ? '⚡ LIGHTNING!' : timeLeft >= 35 ? '🚀 FAST!' : timeLeft >= 20 ? '✨ QUICK!' : '👍 NICE!';
+  el.textContent = label + ' +' + bonus + ' speed bonus';
+  el.classList.remove('show');
+  void el.offsetWidth; // force reflow
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 1300);
+}
+
+function showFeedback(correct, explanation, timedOut, points) {
+  const fb=document.getElementById('feedback');
+  const verdict=document.getElementById('feedback-verdict');
+  const exp=document.getElementById('feedback-explanation');
+  fb.classList.add('show');
+  if (timedOut) {
+    verdict.className='feedback-verdict wrong-v';
+    verdict.innerHTML=`⏱ TIME'S UP — Case Closed Without Answer`;
+  } else if (correct) {
+    verdict.className='feedback-verdict correct-v';
+    verdict.innerHTML=`✓ THREAT IDENTIFIED &nbsp;+${points} pts`;
+    verdict.classList.add('glitch');
+    setTimeout(()=>verdict.classList.remove('glitch'),500);
+  } else {
+    verdict.className='feedback-verdict wrong-v';
+    verdict.innerHTML=`✗ RISK MISSED — Review the analysis`;
+  }
+  exp.innerHTML = explanation;
+}
+
+function flashScreen(color) {
+  const f=document.getElementById('flash');
+  f.className='flash '+color+' show';
+  setTimeout(()=>f.classList.remove('show'),300);
+}
+
+function nextCase() {
+  currentCase++;
+  if (currentCase>=CASES.length) showResults(); else loadCase();
+}
+
+async function showResults() {
+  clearInterval(timer); stopMusic();
+  document.getElementById('progress-bar').style.width='100%';
+  const pct = Math.round((correctCount/CASES.length)*100);
+  const avgTime = totalTime>0 ? Math.round(totalTime/CASES.length) : 60;
+  let badge,title,rank,message;
+  if (pct>=90) { badge='🥇'; title='ELITE ANALYST'; rank='CHIEF AI RISK OFFICER'; message='Exceptional. You identified every major AI risk with precision. Your organization is in safe hands.'; }
+  else if (pct>=70) { badge='🥈'; title='SENIOR DETECTIVE'; rank='SENIOR AI RISK ANALYST'; message='Strong showing. You caught most threats. Review the cases you missed to sharpen your instincts.'; }
+  else if (pct>=50) { badge='🥉'; title='FIELD ANALYST'; rank='AI RISK ANALYST'; message='Good foundation, but some threats slipped through. Focus on shadow AI and deepfake protocols.'; }
+  else { badge='🔰'; title='TRAINEE'; rank='AI RISK TRAINEE'; message='The risks are real. Review the explanations carefully, then try again. Every analyst starts somewhere.'; }
+  document.getElementById('results-badge').textContent=badge;
+  document.getElementById('results-title').textContent=title;
+  document.getElementById('results-score').textContent=score;
+  document.getElementById('results-rank').innerHTML='Rank: <span>'+rank+'</span>';
+  document.getElementById('res-correct').textContent=correctCount;
+  document.getElementById('res-wrong').textContent=CASES.length-correctCount;
+  document.getElementById('res-time').textContent=avgTime+'s';
+  document.getElementById('results-message').textContent=message;
+  document.getElementById('hud').style.display='none';
+  showScreen('results');
+  if (playerName) saveScoreDirect(playerName, score, correctCount, CASES.length);
+}
+
+</script>
+</body>
+</html>
